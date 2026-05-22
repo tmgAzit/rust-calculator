@@ -1,5 +1,7 @@
+use itertools;
+
 use self::itertools::chain;
-use parser::{Node, Op};
+use crate::parser::{Node, Op};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::f64::EPSILON;
@@ -7,10 +9,9 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::{cmp, fmt};
 
-
 pub trait Callable {
-    fn name(&self) -> Option<&str>,
-    fn call(&self, args: &[value], ctx: &mut Context) -> Result<Value, EvalError>;
+    fn name(&self) -> Option<&str>;
+    fn call(&self, args: &[Value], ctx: &mut Context) -> Result<Value, EvalError>;
 }
 
 #[derive(Debug)]
@@ -22,7 +23,7 @@ struct ClosureFunc {
 
 impl Callable for ClosureFunc {
     fn name(&self) -> Option<&str> {
-        match self.name{
+        match self.name {
             Some(ref x) => Some(&x),
             None => None,
         }
@@ -42,17 +43,17 @@ impl Callable for ClosureFunc {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Value {
     Number(f64),
     Boolean(bool),
     List(Rc<[Value]>),
-    Function(Rc<dyn Callable>)
+    Function(Rc<dyn Callable>),
 }
 
 impl Value {
     pub fn as_bool(&self) -> bool {
-        match self{
+        match self {
             Value::Boolean(x) => *x,
             Value::Number(x) => *x != 0.0,
             Value::List(lst) => !lst.is_empty(),
@@ -67,13 +68,13 @@ impl Value {
             Value::Function(_) => "function",
             Value::List(_) => "list",
         }
-    } 
+    }
 }
 
 impl fmt::Debug for Value {
-    fn fmt(&self, f:&mut fmt::Formatter) -> fmt::Result{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Value::Boolean(x) => write!(f, "Number({:?})", x),
+            Value::Number(x) => write!(f, "Number({:?})", x),
             Value::Boolean(x) => write!(f, "Boolean({:?})", x),
             Value::Function(_) => write!(f, "Function(...)"),
             Value::List(x) => write!(f, "{:?}", x),
@@ -82,7 +83,7 @@ impl fmt::Debug for Value {
 }
 
 impl cmp::PartialOrd for Value {
-    fn partial_cmp(&self, other:&Value) -> Option<cmp::Ordering> {
+    fn partial_cmp(&self, other: &Value) -> Option<cmp::Ordering> {
         match (self, other) {
             (Value::Number(x), Value::Number(y)) => {
                 if let Some(x) = x.partial_cmp(y) {
@@ -117,10 +118,10 @@ pub struct EvalError(pub String);
 pub struct Context<'a> {
     stack: Vec<String>,
     parent: Option<&'a Context<'a>>,
-    scope: HashMap<String, Value>
+    scope: HashMap<String, Value>,
 }
 
-impl <'a> Context<'a> {
+impl<'a> Context<'a> {
     pub fn new() -> Self {
         Context {
             stack: vec![],
@@ -213,7 +214,7 @@ fn evaluate_binop(op: Op, lhs: &Value, rhs: &Value) -> Result<Value, EvalError> 
     Ok(out)
 }
 
-fn evaluate_monop(op: Op, arg: &Value) ->  Result<Value, EvalError> {
+fn evaluate_monop(op: Op, arg: &Value) -> Result<Value, EvalError> {
     use Value::Boolean as B;
     use Value::Number as N;
 
@@ -251,7 +252,7 @@ fn evaluate_index(list: &Value, index: &Value) -> Result<Value, EvalError> {
             let i = f.round() as i64;
             let n = list.len();
 
-            if !f.is_finite() || (*f - i as f64).abs()> EPSILON {
+            if !f.is_finite() || (*f - i as f64).abs() > EPSILON {
                 raise!(EvalError, "{} cannot be used as index", f)
             }
 
@@ -260,7 +261,8 @@ fn evaluate_index(list: &Value, index: &Value) -> Result<Value, EvalError> {
                 _ => raise!(
                     EvalError,
                     "index {} is out of bounds for list of size {}",
-                    i, n
+                    i,
+                    n
                 ),
             }
         }
@@ -277,7 +279,12 @@ fn evaluate_index(list: &Value, index: &Value) -> Result<Value, EvalError> {
             EvalError,
             "value of type {} cannot be indexed",
             x.type_name()
-        )
+        ),
+        (x, _) => raise!(
+            EvalError,
+            "value of type {} cannot be indexed",
+            x.type_name()
+        ),
     }
 }
 
@@ -294,12 +301,12 @@ fn bind_vars(node: &Node, bound: &[String], ctx: &Context) -> Result<Node, EvalE
         }
         Node::Lambda(args, body) => {
             let new_bound: Vec<_> = chain(args, bound).cloned().collect();
-            Node::Lambda(args.clone(), Box::new(bind_vars(body, &new_bound), ctx)?)
+            Node::Lambda(args.clone(), Box::new(bind_vars(body, &new_bound, ctx)?))
         }
-        Node::BindOp(op, x, y) => Node::BindOp(
-            *op, 
+        Node::BinOp(op, x, y) => Node::BinOp(
+            *op,
             Box::new(bind_vars(x, bound, ctx)?),
-            Box::new(bind_vars(y, bound, ctx)?)
+            Box::new(bind_vars(y, bound, ctx)?),
         ),
         Node::MonOp(op, x) => Node::MonOp(*op, Box::new(bind_vars(x, bound, ctx)?)),
         Node::Apply(fun, args) => {
@@ -308,12 +315,11 @@ fn bind_vars(node: &Node, bound: &[String], ctx: &Context) -> Result<Node, EvalE
             for arg in args {
                 vals.push(bind_vars(arg, bound, ctx)?);
             }
-            Node::Apply(fun, vars)
+            Node::Apply(fun, vals)
         }
         Node::Index(lhs, rhs) => Node::Index(
             Box::new(bind_vars(lhs, bound, ctx)?),
             Box::new(bind_vars(rhs, bound, ctx)?),
-
         ),
         Node::Cond(cond, lhs, rhs) => Node::Cond(
             Box::new(bind_vars(cond, bound, ctx)?),
@@ -328,16 +334,39 @@ fn bind_vars(node: &Node, bound: &[String], ctx: &Context) -> Result<Node, EvalE
             Node::List(vals)
         }
         Node::Range(lbnd, ubnd, step) => Node::Range(
-            lbnd.as_ref().map(|x| bind_vars(x, bound,ctx)).transpose()?.map(Box::new),
-            ubnd.as_ref().map(|x| vind_vars(x, bound, ctx)).transponse()?.map(Box::new),
-            step.as_ref().map(|x| bind_vars(x, bound, ctx)).transponse()?.map(Box::new)
-        ), 
+            lbnd.as_ref()
+                .map(|x| bind_vars(x, bound, ctx))
+                .transpose()?
+                .map(Box::new),
+            ubnd.as_ref()
+                .map(|x| bind_vars(x, bound, ctx))
+                .transpose()?
+                .map(Box::new),
+            step.as_ref()
+                .map(|x| bind_vars(x, bound, ctx))
+                .transpose()?
+                .map(Box::new),
+        ),
         Node::Immediate(_) => node.clone(),
         Node::VarDef(_, _) | Node::FunDef(_, _, _) => {
             raise!(EvalError, "assignment within lambda is not allowed")
         }
     };
     Ok(out)
+}
+
+fn evaluate_lambda(
+    name: Option<&str>,
+    params: &[String],
+    body: &Node,
+    ctx: &Context,
+) -> Result<Value, EvalError> {
+    let fun = ClosureFunc {
+        name: name.map(|x| format!("user-defined{}", x)),
+        params: params.to_owned(),
+        body: bind_vars(body, params, ctx)?.into(),
+    };
+    Ok(Value::Function(Rc::new(fun)))
 }
 
 fn evaluate_node(node: &Node, ctx: &mut Context) -> Result<Value, EvalError> {
@@ -395,7 +424,7 @@ fn evaluate_node(node: &Node, ctx: &mut Context) -> Result<Value, EvalError> {
 
             if x.as_bool() {
                 evaluate_node(lhs, ctx)
-            }else {
+            } else {
                 evaluate_node(rhs, ctx)
             }
         }
@@ -410,12 +439,12 @@ fn evaluate_node(node: &Node, ctx: &mut Context) -> Result<Value, EvalError> {
         }
         Node::Apply(fun, args) => {
             let f = evaluate_node(fun, ctx)?;
-        
+
             let mut vals = vec![];
             for arg in args {
                 vals.push(evaluate_node(arg, ctx)?);
             }
-            evaluate_index(&f, &vals, ctx)
+            evaluate_apply(&f, &vals, ctx)
         }
 
         Node::Index(lhs, rhs) => {
@@ -433,8 +462,7 @@ fn evaluate_node(node: &Node, ctx: &mut Context) -> Result<Value, EvalError> {
             }
             Ok(Value::List(vals.into()))
         }
-        Node::Lambda(args, body) => evaluate_lambda(None, args, body, ctx)
-
+        Node::Lambda(args, body) => evaluate_lambda(None, args, body, ctx),
     }
 }
 
@@ -445,11 +473,11 @@ pub fn evaluate(root: &Node, ctx: &mut Context) -> Result<Value, EvalError> {
 #[cfg(test)]
 
 mod test {
-    use super::{evaluate, Context, EvalError, Value};
-    use lexer::tokenize;
-    use parser::{parse, ParseError};
+    use super::{Context, EvalError, Value, evaluate};
+    use crate::lexer::tokenize;
+    use crate::parser::{ParseError, parse};
 
-    fn check(line:&str, expected: Value) {
+    fn check(line: &str, expected: Value) {
         let lexer = tokenize(line);
         let root = parse(lexer).unwrap();
         let output = evaluate(&root, &mut Context::new()).unwrap();
@@ -461,11 +489,11 @@ mod test {
     fn test_operator() {
         check("1 + 2 * 3", Value::Number(7.0));
         check("1 * 2 + 3", Value::Number(5.0));
-        
+
         check("2 * 3", Value::Number(6.0));
         check("4 / 2", Value::Number(2.0));
         check("1 + 2", Value::Number(3.0));
-        check("2 -1", Value::Nmber(1.0));
+        check("2 -1", Value::Number(1.0));
 
         check("true * true", Value::Boolean(true));
         check("true * false", Value::Boolean(false));

@@ -1,6 +1,6 @@
-use rand::random;
-
-use eval::{Callable, Context, EvalError, Value};
+use self::rand::random;
+use crate::eval::{Callable, Context, EvalError, Value};
+use rand;
 use std::cmp;
 use std::f64::{self, consts};
 use std::rc::Rc;
@@ -89,7 +89,21 @@ where
 
 fn set_unary<F: 'static>(ctx: &mut Context, key: &str, fun: F)
 where
-    F: Fn(F64) -> F64,
+    F: Fn(f64) -> f64,
+{
+    let name = key.to_owned();
+    set_closure(ctx, key, move |args, _| {
+        let [x, y] = check_args_2(&name, args)?;
+        let x = cast_float(x)?;
+        let _y: f64 = cast_float(y)?;
+
+        Ok(Value::Number(fun(x)))
+    });
+}
+
+fn set_binary<F: 'static>(ctx: &mut Context, key: &str, fun: F)
+where
+    F: Fn(f64, f64) -> f64,
 {
     let name = key.to_owned();
     set_closure(ctx, key, move |args, _| {
@@ -166,7 +180,7 @@ fn set_util(ctx: &mut Context) {
         let mut list = vec![];
 
         while a + (i as f64) < b {
-            list.push(Value::Number(a + (i as f4)));
+            list.push(Value::Number(a + (i as f64)));
             i += 1;
         }
 
@@ -187,7 +201,7 @@ fn set_util(ctx: &mut Context) {
     });
 
     set_closure(ctx, "linspace", |args, _| {
-        let [lbnd, ubnd, steps] = check_arg_3("linspace", args)?;
+        let [lbnd, ubnd, steps] = check_args_3("linspace", args)?;
         let lbnd = cast_float(lbnd)?;
         let ubnd = cast_float(ubnd)?;
         let steps = cast_float(steps)?;

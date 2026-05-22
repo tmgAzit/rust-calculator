@@ -1,7 +1,7 @@
-use eval::Value;
-pub use lexer::Op;
-pub use lexer::Span;
-use lexer::{Lexer, Token};
+use crate::eval::Value;
+pub use crate::lexer::Op;
+pub use crate::lexer::Span;
+use crate::lexer::{Lexer, Token};
 
 #[derive(Debug, Clone)]
 pub enum Node {
@@ -42,6 +42,7 @@ fn expect_token(lexer: &mut Lexer, token: &Token) -> Result<(), ParseError> {
     if lexer.next() != *token {
         unexpected_prev_token(lexer)?;
     }
+    Ok(())
 }
 
 fn parse_list(lexer: &mut Lexer, closing: &Token) -> Result<Vec<Node>, ParseError> {
@@ -128,7 +129,7 @@ fn op_prec(op: Op) -> i32 {
         Op::Eq | Op::Neq => 4,
         Op::Add | Op::Sub => 5,
         Op::Mul | Op::Div => 6,
-        _ => _1,
+        _ => -1,
     }
 }
 

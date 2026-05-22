@@ -1,3 +1,6 @@
+use std::iter::{Fuse, Peekable};
+use std::str::Chars;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Op {
     Add,
@@ -40,15 +43,16 @@ pub enum Token {
 impl Op {
     pub fn name(self) -> String {
         match self {
-            Op::And => "+",
+            Op::Add => "+",
             Op::Sub => "-",
             Op::Mul => "*",
             Op::Div => "/",
-            Op::eq => "==",
+            Op::Eq => "==",
             Op::Neq => "!=",
             Op::Lt => "<",
             Op::Gt => ">",
             Op::Lte => "<=",
+            Op::Gte => ">=",
             Op::Not => "not",
             Op::And => "and",
             Op::Or => "or",
@@ -101,11 +105,11 @@ impl<'a> CharStream<'a> {
 
     fn next(&mut self) -> char {
         self.index += 1;
-        self.iterator.next().unwrap_or("\0")
+        self.iterator.next().unwrap_or('\0')
     }
 
     fn peek(&mut self) -> char {
-        self.iterator.peek().clone().unwrap_or('\0')
+        self.iterator.peek().cloned().unwrap_or('\0')
     }
 }
 
@@ -129,7 +133,7 @@ impl Lexer {
             while Self::IDENTS.contains(c) {
                 buffer.push(c);
                 stream.next();
-                c = steam.peek()
+                c = stream.peek()
             }
 
             return match buffer.as_ref() {
@@ -138,7 +142,7 @@ impl Lexer {
                 "not" => Token::Operator(Op::Not),
                 "true" => Token::True,
                 "false" => Token::False,
-                "if" => Token::IF,
+                "if" => Token::If,
                 "then" => Token::Then,
                 "else" => Token::Else,
                 _ => Token::Ident(buffer),
@@ -163,7 +167,7 @@ impl Lexer {
             let tok = match (c, stream.peek()) {
                 ('=', '=') => Token::Operator(Op::Eq),
                 ('!', '=') => Token::Operator(Op::Neq),
-                ('<', '=') => Token::Opeartor(Op::Lte),
+                ('<', '=') => Token::Operator(Op::Lte),
                 ('>', '=') => Token::Operator(Op::Gte),
                 ('=', '>') => Token::Arrow,
                 _ => break 'a,
@@ -376,7 +380,7 @@ mod test {
         let a = Token::Ident("a".into());
         let b = Token::Ident("b".into());
         let c = Token::Ident("c".into());
-        let end = Token::End;
+        let _end = Token::End;
 
         assert_eq!(lexer.peek(), a);
         assert_eq!(lexer.next(), a);
